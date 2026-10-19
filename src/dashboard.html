@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Dashboard - Sistema de Gestión Parqueadero Autos Colombia">
+    <title>Dashboard – Autos Colombia</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+<div class="app-layout">
+    <div class="main-content">
+        <!-- Topbar -->
+        <header class="topbar">
+            <div class="topbar-title">
+                <h1>Dashboard</h1>
+                <p>Estado actual del parqueadero en tiempo real</p>
+            </div>
+            <div class="topbar-actions">
+                <span class="topbar-time" id="topbarTime"></span>
+                <button class="btn btn-success btn-sm" onclick="location.href='entradas.html'">➕ Nueva Entrada</button>
+                <button class="btn btn-danger btn-sm" onclick="location.href='salidas.html'">➖ Registrar Salida</button>
+            </div>
+        </header>
+
+        <!-- Page Content -->
+        <main class="page-content">
+            <!-- Stats Grid -->
+            <div class="stats-grid" id="statsGrid"></div>
+
+            <!-- Grid: Mapa + Vehículos dentro -->
+            <div class="grid-2">
+                <!-- Mapa de Celdas -->
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title">🗺️ Mapa del Parqueadero</div>
+                            <div class="card-subtitle">Haz clic en una celda ocupada para ver detalles</div>
+                        </div>
+                        <div style="display:flex;gap:0.5rem;align-items:center;font-size:0.75rem;">
+                            <span style="display:inline-flex;align-items:center;gap:0.25rem;"><span style="width:10px;height:10px;background:rgba(16,185,129,0.4);border-radius:2px;display:inline-block;"></span> Libre</span>
+                            <span style="display:inline-flex;align-items:center;gap:0.25rem;"><span style="width:10px;height:10px;background:rgba(239,68,68,0.4);border-radius:2px;display:inline-block;"></span> Ocupada</span>
+                        </div>
+                    </div>
+                    <div id="parkingMap"></div>
+                </div>
+
+                <!-- Vehículos dentro -->
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title">🚗 Vehículos en el Parqueadero</div>
+                            <div class="card-subtitle" id="vehiculosCount">Cargando...</div>
+                        </div>
+                        <a href="historial.html" class="btn btn-outline btn-sm">Ver todos</a>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Placa</th>
+                                    <th>Propietario</th>
+                                    <th>Celda</th>
+                                    <th>Tiempo</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="vehiculosDentroTable"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Movimientos recientes -->
+            <div class="card mt-2">
+                <div class="card-header">
+                    <div>
+                        <div class="card-title">📋 Movimientos Recientes</div>
+                        <div class="card-subtitle">Últimas entradas y salidas registradas</div>
+                    </div>
+                    <a href="historial.html" class="btn btn-outline btn-sm">Ver historial</a>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Placa</th>
+                                <th>Tipo</th>
+                                <th>Propietario</th>
+                                <th>Celda</th>
+                                <th>Entrada</th>
+                                <th>Salida</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recentTable"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<!-- Modal detalles celda -->
+<div class="modal-overlay" id="celdaModal" style="display:none;" onclick="closeCeldaModal(event)">
+    <div class="modal" style="max-width:380px">
+        <div class="modal-header">
+            <div class="modal-title" id="celdaModalTitle">Detalle de Celda</div>
+            <button class="modal-close" onclick="document.getElementById('celdaModal').style.display='none'">✕</button>
+        </div>
+        <div class="modal-body" id="celdaModalBody"></div>
+        <div class="modal-footer">
+            <button class="btn btn-danger" id="btnSalidaModal" style="display:none" onclick="irASalida()">Registrar Salida</button>
+            <button class="btn btn-outline" onclick="document.getElementById('celdaModal').style.display='none'">Cerrar</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script>
+Layout.init('dashboard.html');
+
+let selectedVehiculo = null;
+
+function renderStats() {
+    const stats = DB.getStats();
+    const grid = document.getElementById('statsGrid');
+    const items = [
+        { label: 'Total Celdas', value: stats.totalCeldas, icon: '🅿️', color: '#3b82f6' },
+        { label: 'Celdas Ocupadas', value: stats.celdasOcupadas, icon: '🔴', color: '#ef4444' },
+        { label: 'Celdas Libres', value: stats.celdasLibres, icon: '🟢', color: '#10b981' },
+        { label: 'Entradas Hoy', value: stats.entradasHoy, icon: '⬇️', color: '#06b6d4' },
+        { label: 'Salidas Hoy', value: stats.salidasHoy, icon: '⬆️', color: '#f59e0b' },
+        { label: 'Suscripciones Activas', value: stats.suscripcionesActivas, icon: '✅', color: '#8b5cf6' }
+    ];
+    grid.innerHTML = items.map(s => `
+        <div class="stat-card" style="--stat-color:${s.color}">
+            <div class="stat-icon" style="background:${s.color}22;color:${s.color}">${s.icon}</div>
+            <div class="stat-info">
+                <div class="stat-value">${s.value}</div>
+                <div class="stat-label">${s.label}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderMap() {
+    const celdas = DB.Celdas.getAll();
+    const movimientos = DB.Movimientos.getAll();
+    const map = document.getElementById('parkingMap');
+
+    // Agrupar por sector
+    const sectores = {};
+    celdas.forEach(c => {
+        if (!sectores[c.sector]) sectores[c.sector] = [];
+        sectores[c.sector].push(c);
+    });
+
+    let html = '';
+    Object.entries(sectores).forEach(([sector, cells]) => {
+        html += `<div style="margin-bottom:1rem"><div style="font-size:0.7rem;font-weight:600;color:var(--text-muted);margin-bottom:0.4rem">Sector ${sector}</div>`;
+        html += `<div class="parking-grid">`;
+        cells.forEach(c => {
+            let vehiculoInfo = '';
+            if (c.estado === 'OCUPADA') {
+                const mov = movimientos.find(m => m.celdaId === c.id && m.estado === 'DENTRO');
+                if (mov) {
+                    const veh = DB.Vehiculos.getById(mov.vehiculoId);
+                    vehiculoInfo = veh ? veh.placa : '';
+                }
+            }
+            const cls = c.activa ? c.estado.toLowerCase() : 'inactiva';
+            html += `<div class="parking-cell ${cls}" onclick="showCeldaDetail(${c.id})" title="Celda ${c.numero} - ${c.estado}">
+                <span class="cell-num">${c.numero}</span>
+                ${vehiculoInfo ? `<span class="cell-plate">${vehiculoInfo}</span>` : ''}
+            </div>`;
+        });
+        html += `</div></div>`;
+    });
+    map.innerHTML = html;
+}
+
+function renderVehiculosDentro() {
+    const movimientos = DB.Movimientos.find(m => m.estado === 'DENTRO');
+    const tbody = document.getElementById('vehiculosDentroTable');
+    document.getElementById('vehiculosCount').textContent = `${movimientos.length} vehículo(s) actualmente dentro`;
+
+    if (!movimientos.length) {
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:2rem">No hay vehículos dentro del parqueadero</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = movimientos.map(m => {
+        const veh = DB.Vehiculos.getById(m.vehiculoId);
+        const persona = veh ? DB.Personas.getById(veh.personaId) : null;
+        const celda = DB.Celdas.getById(m.celdaId);
+        return `<tr>
+            <td><span class="font-mono" style="color:var(--accent-cyan)">${veh?.placa || '—'}</span></td>
+            <td>${persona?.nombreCompleto || '—'}</td>
+            <td><span class="badge badge-info">${celda?.numero || '—'}</span></td>
+            <td>${Utils.formatDuration(m.fechaEntrada)}</td>
+            <td><button class="btn btn-danger btn-sm" onclick="irASalidaPlaca('${veh?.placa}')">Salida</button></td>
+        </tr>`;
+    }).join('');
+}
+
+function renderRecent() {
+    const movimientos = DB.Movimientos.getAll().slice(-10).reverse();
+    const tbody = document.getElementById('recentTable');
+
+    if (!movimientos.length) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">Sin movimientos registrados</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = movimientos.map(m => {
+        const veh = DB.Vehiculos.getById(m.vehiculoId);
+        const persona = veh ? DB.Personas.getById(veh.personaId) : null;
+        const celda = DB.Celdas.getById(m.celdaId);
+        return `<tr>
+            <td><span class="font-mono" style="color:var(--accent-cyan)">${veh?.placa || '—'}</span></td>
+            <td>${veh?.tipo || '—'}</td>
+            <td>${persona?.nombreCompleto || '—'}</td>
+            <td>${celda?.numero || '—'}</td>
+            <td>${Utils.formatDateTime(m.fechaEntrada)}</td>
+            <td>${m.fechaSalida ? Utils.formatDateTime(m.fechaSalida) : '<span class="text-muted">—</span>'}</td>
+            <td><span class="badge ${m.estado === 'DENTRO' ? 'badge-success' : 'badge-neutral'}">${m.estado === 'DENTRO' ? 'Dentro' : 'Salió'}</span></td>
+        </tr>`;
+    }).join('');
+}
+
+function showCeldaDetail(celdaId) {
+    const celda = DB.Celdas.getById(celdaId);
+    if (!celda) return;
+    const modal = document.getElementById('celdaModal');
+    const title = document.getElementById('celdaModalTitle');
+    const body = document.getElementById('celdaModalBody');
+    const btnSalida = document.getElementById('btnSalidaModal');
+
+    title.textContent = `Celda ${celda.numero}`;
+
+    if (celda.estado === 'LIBRE') {
+        body.innerHTML = `<div style="text-align:center;padding:1.5rem 0">
+            <div style="font-size:3rem;margin-bottom:0.75rem">🟢</div>
+            <div style="font-size:1.1rem;font-weight:700;color:#34d399">Celda Libre</div>
+            <div class="text-muted text-sm mt-1">Sector ${celda.sector} · Tipo: ${celda.tipo}</div>
+        </div>`;
+        btnSalida.style.display = 'none';
+        selectedVehiculo = null;
+    } else {
+        const mov = DB.Movimientos.findOne(m => m.celdaId === celdaId && m.estado === 'DENTRO');
+        if (mov) {
+            const veh = DB.Vehiculos.getById(mov.vehiculoId);
+            const persona = veh ? DB.Personas.getById(veh.personaId) : null;
+            selectedVehiculo = veh;
+            body.innerHTML = `<div style="display:flex;flex-direction:column;gap:0.75rem">
+                <div style="text-align:center;padding:0.75rem 0;border-bottom:1px solid var(--glass-border)">
+                    <div style="font-size:1.5rem;font-weight:800;color:var(--accent-cyan);font-family:monospace">${veh?.placa || '—'}</div>
+                    <div class="text-muted text-sm">${veh?.marca || ''} ${veh?.modelo || ''} · ${veh?.color || ''}</div>
+                </div>
+                <div class="grid-2" style="gap:0.5rem">
+                    <div><div class="text-muted text-sm">Propietario</div><div style="font-weight:600;font-size:0.875rem">${persona?.nombreCompleto || '—'}</div></div>
+                    <div><div class="text-muted text-sm">Tipo</div><div style="font-weight:600;font-size:0.875rem">${veh?.tipo || '—'}</div></div>
+                    <div><div class="text-muted text-sm">Entrada</div><div style="font-weight:600;font-size:0.875rem">${Utils.formatDateTime(mov.fechaEntrada)}</div></div>
+                    <div><div class="text-muted text-sm">Tiempo</div><div style="font-weight:600;font-size:0.875rem;color:var(--accent-orange)">${Utils.formatDuration(mov.fechaEntrada)}</div></div>
+                </div>
+            </div>`;
+            btnSalida.style.display = 'block';
+        }
+    }
+    modal.style.display = 'flex';
+}
+
+function closeCeldaModal(e) {
+    if (e.target.id === 'celdaModal') document.getElementById('celdaModal').style.display = 'none';
+}
+
+function irASalidaPlaca(placa) {
+    sessionStorage.setItem('ac_salida_placa', placa);
+    location.href = 'salidas.html';
+}
+
+function irASalida() {
+    if (selectedVehiculo) {
+        sessionStorage.setItem('ac_salida_placa', selectedVehiculo.placa);
+        location.href = 'salidas.html';
+    }
+}
+
+// Render inicial
+renderStats();
+renderMap();
+renderVehiculosDentro();
+renderRecent();
+
+// Actualizar cada 30 segundos
+setInterval(() => {
+    renderStats();
+    renderMap();
+    renderVehiculosDentro();
+    renderRecent();
+}, 30000);
+</script>
+</body>
+</html>

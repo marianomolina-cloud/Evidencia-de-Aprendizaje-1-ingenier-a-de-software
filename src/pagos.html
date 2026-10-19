@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pagos – Autos Colombia</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+<div class="app-layout">
+    <div class="main-content">
+        <header class="topbar">
+            <div class="topbar-title">
+                <h1>💰 Gestión de Pagos</h1>
+                <p>Mensualidades de los suscriptores</p>
+            </div>
+            <div class="topbar-actions">
+                <span class="topbar-time" id="topbarTime"></span>
+                <button class="btn btn-primary" onclick="abrirModal()">➕ Registrar Pago</button>
+            </div>
+        </header>
+        <main class="page-content">
+            <!-- Stats rápidos -->
+            <div class="stats-grid mb-2" id="statsGrid"></div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">Historial de Pagos</div>
+                    <div class="text-muted text-sm" id="totalPagos"></div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Propietario</th>
+                                <th>Período</th>
+                                <th>Fecha Pago</th>
+                                <th>Monto</th>
+                                <th>Método</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaPagos"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal" style="display:none" onclick="if(event.target.id==='modal')cerrarModal()">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">Registrar Pago de Mensualidad</div>
+            <button class="modal-close" onclick="cerrarModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div id="modalAlert"></div>
+            <div class="form-grid">
+                <div class="form-group" style="grid-column:1/-1">
+                    <label>Propietario *</label>
+                    <select id="fPersona" class="form-control"></select>
+                </div>
+                <div class="form-group">
+                    <label>Mes de Pago *</label>
+                    <input type="month" id="fMes" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label>Monto *</label>
+                    <input type="number" id="fMonto" class="form-control" value="120000" min="0" step="1000">
+                </div>
+                <div class="form-group">
+                    <label>Método de Pago</label>
+                    <select id="fMetodo" class="form-control">
+                        <option value="EFECTIVO">Efectivo</option>
+                        <option value="TRANSFERENCIA">Transferencia</option>
+                        <option value="TARJETA">Tarjeta</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Fecha de Pago</label>
+                    <input type="date" id="fFecha" class="form-control">
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="cerrarModal()">Cancelar</button>
+            <button class="btn btn-primary" onclick="guardarPago()">Registrar Pago</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script>
+Layout.init('pagos.html');
+
+function renderStats() {
+    const hoy = new Date().toISOString().split('T')[0];
+    const pagos = DB.Pagos.getAll();
+    const personas = DB.Personas.getAll().filter(p => p.estado === 'ACTIVO');
+    const vigentes = pagos.filter(p => p.periodoFin >= hoy);
+    const sinPago = personas.filter(p => !DB.tienePagoVigente(p.id));
+    const items = [
+        { label: 'Suscriptores Activos', value: vigentes.length, icon: '✅', color: '#10b981' },
+        { label: 'Sin Pago Vigente', value: sinPago.length, icon: '⚠️', color: '#f59e0b' },
+        { label: 'Total Pagos Registrados', value: pagos.length, icon: '📄', color: '#3b82f6' },
+        { label: 'Recaudado Este Mes', value: Utils.formatCurrency(pagos.filter(p => p.periodoInicio?.startsWith(hoy.slice(0,7))).reduce((a,b) => a + (b.monto||0), 0)), icon: '💵', color: '#8b5cf6', isText: true }
+    ];
+    document.getElementById('statsGrid').innerHTML = items.map(s => `
+        <div class="stat-card" style="--stat-color:${s.color}">
+            <div class="stat-icon" style="background:${s.color}22;color:${s.color}">${s.icon}</div>
+            <div class="stat-info">
+                <div class="stat-value" style="${s.isText?'font-size:1rem':''};">${s.value}</div>
+                <div class="stat-label">${s.label}</div>
+            </div>
+        </div>`).join('');
+}
+
+function renderTabla() {
+    const pagos = DB.Pagos.getAll().reverse();
+    const hoy = new Date().toISOString().split('T')[0];
+    document.getElementById('totalPagos').textContent = `${pagos.length} pago(s)`;
+    const tbody = document.getElementById('tablaPagos');
+    if (!pagos.length) { tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:2rem">Sin pagos registrados</td></tr>`; return; }
+    tbody.innerHTML = pagos.map(p => {
+        const persona = DB.Personas.getById(p.personaId);
+        const vigente = p.periodoFin >= hoy;
+        return `<tr>
+            <td>${persona?.nombreCompleto || '—'}</td>
+            <td>${p.periodoInicio} al ${p.periodoFin}</td>
+            <td>${Utils.formatDate(p.fechaPago)}</td>
+            <td>${Utils.formatCurrency(p.monto)}</td>
+            <td>${p.metodoPago}</td>
+            <td><span class="badge ${vigente ? 'badge-success' : 'badge-neutral'}">${vigente ? 'Vigente' : 'Vencido'}</span></td>
+        </tr>`;
+    }).join('');
+}
+
+function abrirModal() {
+    document.getElementById('modalAlert').innerHTML = '';
+    const personas = DB.Personas.getAll().filter(p => p.estado === 'ACTIVO');
+    document.getElementById('fPersona').innerHTML = personas.map(p => `<option value="${p.id}">${p.nombreCompleto}</option>`).join('');
+    const now = new Date();
+    document.getElementById('fMes').value = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    document.getElementById('fFecha').value = now.toISOString().split('T')[0];
+    document.getElementById('modal').style.display = 'flex';
+}
+
+function cerrarModal() { document.getElementById('modal').style.display = 'none'; }
+
+function guardarPago() {
+    const personaId = parseInt(document.getElementById('fPersona').value);
+    const mes = document.getElementById('fMes').value;
+    const monto = parseFloat(document.getElementById('fMonto').value);
+    const metodo = document.getElementById('fMetodo').value;
+    const fecha = document.getElementById('fFecha').value;
+    const alert = document.getElementById('modalAlert');
+
+    if (!personaId || !mes || !monto) {
+        alert.innerHTML = `<div class="alert alert-danger">❌ Propietario, mes y monto son obligatorios.</div>`;
+        return;
+    }
+
+    const [y, m] = mes.split('-');
+    const periodoInicio = `${y}-${m}-01`;
+    const periodoFin = new Date(parseInt(y), parseInt(m), 0).toISOString().split('T')[0];
+
+    const user = Auth.getUser();
+    DB.Pagos.add({ personaId, periodoInicio, periodoFin, monto, metodoPago: metodo, fechaPago: fecha, usuarioSistemaId: user.userId });
+    Toast.success('Pago registrado correctamente.');
+    cerrarModal();
+    renderTabla();
+    renderStats();
+}
+
+renderStats();
+renderTabla();
+</script>
+</body>
+</html>

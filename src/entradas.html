@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro de Entrada – Autos Colombia</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+<div class="app-layout">
+    <div class="main-content">
+        <header class="topbar">
+            <div class="topbar-title">
+                <h1>🟢 Registro de Entrada</h1>
+                <p>Registrar ingreso de vehículo al parqueadero</p>
+            </div>
+            <div class="topbar-actions">
+                <span class="topbar-time" id="topbarTime"></span>
+                <a href="dashboard.html" class="btn btn-outline btn-sm">← Dashboard</a>
+            </div>
+        </header>
+
+        <main class="page-content">
+            <div class="grid-2">
+                <!-- Formulario de Entrada -->
+                <div class="card">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title">Datos del Vehículo</div>
+                            <div class="card-subtitle">Ingrese la placa para buscar el vehículo</div>
+                        </div>
+                    </div>
+
+                    <div id="alertBox"></div>
+
+                    <div class="form-group mb-2">
+                        <label>🔍 Placa del Vehículo *</label>
+                        <div style="display:flex;gap:0.5rem">
+                            <input type="text" id="inputPlaca" class="form-control" placeholder="Ej: ABC123 o GH12B" 
+                                   style="text-transform:uppercase;font-weight:700;font-size:1.1rem;letter-spacing:0.1em;font-family:monospace"
+                                   maxlength="7" oninput="this.value=this.value.toUpperCase()">
+                            <button class="btn btn-primary" onclick="buscarVehiculo()" id="btnBuscar">Buscar</button>
+                        </div>
+                    </div>
+
+                    <!-- Resultado de búsqueda -->
+                    <div id="vehiculoInfo" style="display:none">
+                        <hr class="divider">
+                        <div style="display:flex;flex-direction:column;gap:0.75rem">
+                            <div class="grid-2" style="gap:0.75rem">
+                                <div class="form-group">
+                                    <label>Tipo de Vehículo</label>
+                                    <input type="text" id="infoTipo" class="form-control" readonly>
+                                </div>
+                                <div class="form-group">
+                                    <label>Marca / Modelo</label>
+                                    <input type="text" id="infoMarca" class="form-control" readonly>
+                                </div>
+                                <div class="form-group">
+                                    <label>Propietario</label>
+                                    <input type="text" id="infoPropietario" class="form-control" readonly>
+                                </div>
+                                <div class="form-group">
+                                    <label>Estado Mensualidad</label>
+                                    <div id="infoPago" class="form-control" style="display:flex;align-items:center;gap:0.5rem"></div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Celda Asignada (automática)</label>
+                                <input type="text" id="infoCelda" class="form-control" readonly style="font-weight:700;color:var(--accent-cyan);font-family:monospace">
+                            </div>
+                            <div class="form-group">
+                                <label>Observaciones</label>
+                                <textarea id="inputObs" class="form-control" placeholder="Observaciones opcionales al ingreso..."></textarea>
+                            </div>
+                            <button class="btn btn-success" onclick="registrarEntrada()" id="btnEntrada" style="width:100%;padding:0.875rem;font-size:1rem">
+                                ✅ Confirmar Entrada
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Panel de información -->
+                <div style="display:flex;flex-direction:column;gap:1.25rem">
+                    <!-- Stats rápidos -->
+                    <div class="card">
+                        <div class="card-title" style="margin-bottom:1rem">📊 Disponibilidad Actual</div>
+                        <div id="disponibilidadGrid"></div>
+                    </div>
+
+                    <!-- Últimas entradas -->
+                    <div class="card">
+                        <div class="card-title" style="margin-bottom:1rem">🕒 Últimas Entradas</div>
+                        <div id="ultimasEntradas"></div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script>
+Layout.init('entradas.html');
+
+let vehiculoActual = null;
+let celdaActual = null;
+let personaActual = null;
+
+function renderDisponibilidad() {
+    const celdas = DB.Celdas.getAll();
+    const porTipo = {};
+    celdas.filter(c => c.activa).forEach(c => {
+        if (!porTipo[c.tipo]) porTipo[c.tipo] = { libres: 0, ocupadas: 0 };
+        if (c.estado === 'LIBRE') porTipo[c.tipo].libres++;
+        else porTipo[c.tipo].ocupadas++;
+    });
+    document.getElementById('disponibilidadGrid').innerHTML = Object.entries(porTipo).map(([tipo, data]) => {
+        const total = data.libres + data.ocupadas;
+        const pct = Math.round((data.ocupadas / total) * 100);
+        const color = pct > 80 ? '#ef4444' : pct > 50 ? '#f59e0b' : '#10b981';
+        return `<div style="margin-bottom:0.875rem">
+            <div class="flex-between mb-1" style="font-size:0.8rem">
+                <span>${tipo} <span class="text-muted">(${total} total)</span></span>
+                <span style="font-weight:600">${data.libres} libre(s)</span>
+            </div>
+            <div style="height:6px;background:rgba(255,255,255,0.08);border-radius:3px">
+                <div style="height:100%;width:${pct}%;background:${color};border-radius:3px;transition:width 0.5s"></div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function renderUltimasEntradas() {
+    const movs = DB.Movimientos.getAll().filter(m => m.estado === 'DENTRO').slice(-5);
+    const el = document.getElementById('ultimasEntradas');
+    if (!movs.length) { el.innerHTML = `<p class="text-muted text-sm">Sin entradas recientes</p>`; return; }
+    el.innerHTML = movs.map(m => {
+        const v = DB.Vehiculos.getById(m.vehiculoId);
+        const c = DB.Celdas.getById(m.celdaId);
+        return `<div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid var(--glass-border)">
+            <div>
+                <div style="font-weight:700;font-family:monospace;color:var(--accent-cyan)">${v?.placa || '—'}</div>
+                <div class="text-muted" style="font-size:0.75rem">${Utils.formatDateTime(m.fechaEntrada)}</div>
+            </div>
+            <span class="badge badge-info">${c?.numero || '—'}</span>
+        </div>`;
+    }).join('');
+}
+
+function buscarVehiculo() {
+    const placa = document.getElementById('inputPlaca').value.trim().toUpperCase();
+    const alertBox = document.getElementById('alertBox');
+    const vehiculoInfo = document.getElementById('vehiculoInfo');
+
+    if (!placa) {
+        alertBox.innerHTML = `<div class="alert alert-warning">⚠️ Ingresa la placa del vehículo.</div>`;
+        return;
+    }
+
+    alertBox.innerHTML = '';
+    vehiculoInfo.style.display = 'none';
+    vehiculoActual = null;
+
+    // Buscar vehículo
+    const vehiculo = DB.Vehiculos.findOne(v => v.placa === placa && v.activo);
+    if (!vehiculo) {
+        alertBox.innerHTML = `<div class="alert alert-danger">❌ Vehículo con placa <strong>${placa}</strong> no encontrado o inactivo. <a href="vehiculos.html">Registrar vehículo</a></div>`;
+        return;
+    }
+
+    // Verificar si ya está dentro
+    const movActivo = DB.getMovimientoActivo(vehiculo.id);
+    if (movActivo) {
+        const celda = DB.Celdas.getById(movActivo.celdaId);
+        alertBox.innerHTML = `<div class="alert alert-warning">⚠️ Este vehículo ya tiene un registro de entrada activo en la celda <strong>${celda?.numero || '?'}</strong>. Registra la salida primero.</div>`;
+        return;
+    }
+
+    // Obtener propietario
+    const persona = DB.Personas.getById(vehiculo.personaId);
+    if (!persona) {
+        alertBox.innerHTML = `<div class="alert alert-danger">❌ No se encontró el propietario del vehículo.</div>`;
+        return;
+    }
+
+    if (persona.estado !== 'ACTIVO') {
+        alertBox.innerHTML = `<div class="alert alert-danger">🚫 El propietario <strong>${persona.nombreCompleto}</strong> está suspendido. Contacte al administrador.</div>`;
+        return;
+    }
+
+    // Verificar pago
+    const tieneP = DB.tienePagoVigente(persona.id);
+
+    // Buscar celda libre
+    const celda = DB.getCeldaLibre(vehiculo.tipo);
+    if (!celda) {
+        alertBox.innerHTML = `<div class="alert alert-danger">🅿️ No hay celdas disponibles para <strong>${vehiculo.tipo}</strong>.</div>`;
+        return;
+    }
+
+    vehiculoActual = vehiculo;
+    celdaActual = celda;
+    personaActual = persona;
+
+    // Mostrar info
+    document.getElementById('infoTipo').value = vehiculo.tipo;
+    document.getElementById('infoMarca').value = `${vehiculo.marca || ''} ${vehiculo.modelo || ''}`.trim() || '—';
+    document.getElementById('infoPropietario').value = persona.nombreCompleto;
+    document.getElementById('infoPago').innerHTML = tieneP
+        ? `<span class="badge badge-success">✅ Mensualidad Vigente</span>`
+        : `<span class="badge badge-danger">❌ Sin Pago Vigente</span>`;
+    document.getElementById('infoCelda').value = `${celda.numero} (Sector ${celda.sector})`;
+
+    const btnEntrada = document.getElementById('btnEntrada');
+    if (!tieneP) {
+        btnEntrada.disabled = true;
+        btnEntrada.style.opacity = '0.5';
+        btnEntrada.title = 'El propietario no tiene mensualidad vigente';
+        alertBox.innerHTML = `<div class="alert alert-warning">⚠️ El propietario <strong>${persona.nombreCompleto}</strong> no tiene mensualidad vigente. Registre el pago primero.</div>`;
+    } else {
+        btnEntrada.disabled = false;
+        btnEntrada.style.opacity = '1';
+    }
+
+    vehiculoInfo.style.display = 'block';
+}
+
+function registrarEntrada() {
+    if (!vehiculoActual || !celdaActual) return;
+
+    const user = Auth.getUser();
+    const obs = document.getElementById('inputObs').value;
+
+    // Registrar movimiento
+    DB.Movimientos.add({
+        fechaEntrada: new Date().toISOString(),
+        fechaSalida: null,
+        estado: 'DENTRO',
+        vehiculoId: vehiculoActual.id,
+        celdaId: celdaActual.id,
+        usuarioEntradaId: user.userId,
+        usuarioSalidaId: null,
+        observaciones: obs
+    });
+
+    // Actualizar celda
+    DB.Celdas.update(celdaActual.id, { estado: 'OCUPADA' });
+
+    Toast.success(`✅ Entrada registrada: ${vehiculoActual.placa} → Celda ${celdaActual.numero}`);
+
+    // Resetear
+    document.getElementById('inputPlaca').value = '';
+    document.getElementById('vehiculoInfo').style.display = 'none';
+    document.getElementById('alertBox').innerHTML = '';
+    vehiculoActual = null;
+    celdaActual = null;
+    personaActual = null;
+
+    renderDisponibilidad();
+    renderUltimasEntradas();
+}
+
+// Capturar Enter en el campo de placa
+document.getElementById('inputPlaca').addEventListener('keydown', e => {
+    if (e.key === 'Enter') buscarVehiculo();
+});
+
+renderDisponibilidad();
+renderUltimasEntradas();
+</script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Novedades – Autos Colombia</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+<div class="app-layout">
+    <div class="main-content">
+        <header class="topbar">
+            <div class="topbar-title">
+                <h1>📝 Novedades</h1>
+                <p>Incidentes y observaciones sobre vehículos</p>
+            </div>
+            <div class="topbar-actions">
+                <span class="topbar-time" id="topbarTime"></span>
+                <button class="btn btn-primary" onclick="abrirModal()">➕ Nueva Novedad</button>
+            </div>
+        </header>
+        <main class="page-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="search-bar" style="flex:1;max-width:360px">
+                        <input type="text" id="searchInput" class="form-control" placeholder="Buscar por placa o descripción..." oninput="renderTabla()">
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Fecha</th><th>Placa</th><th>Tipo</th><th>Descripción</th><th>Registrado Por</th><th>Estado</th><th></th></tr>
+                        </thead>
+                        <tbody id="tablaNovedades"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal" style="display:none" onclick="if(event.target.id==='modal')cerrarModal()">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title">Registrar Novedad</div>
+            <button class="modal-close" onclick="cerrarModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div id="modalAlert"></div>
+            <div class="form-grid">
+                <div class="form-group" style="grid-column:1/-1">
+                    <label>Placa del Vehículo *</label>
+                    <input type="text" id="fPlaca" class="form-control" placeholder="ABC123" maxlength="7" oninput="this.value=this.value.toUpperCase()" style="font-family:monospace;font-weight:700">
+                </div>
+                <div class="form-group" style="grid-column:1/-1">
+                    <label>Tipo de Novedad *</label>
+                    <select id="fTipo" class="form-control">
+                        <option value="OBSERVACION">Observación</option>
+                        <option value="DAÑO">Daño</option>
+                        <option value="REPORTE">Reporte</option>
+                        <option value="ACCIDENTE">Accidente</option>
+                        <option value="OTRO">Otro</option>
+                    </select>
+                </div>
+                <div class="form-group" style="grid-column:1/-1">
+                    <label>Descripción *</label>
+                    <textarea id="fDescripcion" class="form-control" rows="4" placeholder="Descripción detallada de la novedad..."></textarea>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="cerrarModal()">Cancelar</button>
+            <button class="btn btn-primary" onclick="guardar()">Registrar</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script>
+Layout.init('novedades.html');
+
+const tipoBadge = { DAÑO:'badge-danger', REPORTE:'badge-warning', OBSERVACION:'badge-info', ACCIDENTE:'badge-danger', OTRO:'badge-neutral' };
+
+function renderTabla() {
+    const q = document.getElementById('searchInput').value.toLowerCase();
+    let novedades = DB.Novedades.getAll().reverse();
+    if (q) {
+        novedades = novedades.filter(n => {
+            const v = DB.Vehiculos.getById(n.vehiculoId);
+            return (v?.placa||'').toLowerCase().includes(q) || n.descripcion.toLowerCase().includes(q);
+        });
+    }
+    const tbody = document.getElementById('tablaNovedades');
+    if (!novedades.length) { tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem">Sin novedades</td></tr>`; return; }
+    tbody.innerHTML = novedades.map(n => {
+        const v = DB.Vehiculos.getById(n.vehiculoId);
+        const u = DB.Usuarios.getById(n.usuarioSistemaId);
+        return `<tr>
+            <td>${Utils.formatDateTime(n.fechaRegistro)}</td>
+            <td><span class="font-mono" style="color:var(--accent-cyan)">${v?.placa||'—'}</span></td>
+            <td><span class="badge ${tipoBadge[n.tipo]||'badge-neutral'}">${n.tipo}</span></td>
+            <td style="max-width:250px">${Utils.escapeHtml(n.descripcion)}</td>
+            <td>${u?.nombre||'—'}</td>
+            <td><span class="badge ${n.archivada?'badge-neutral':'badge-success'}">${n.archivada?'Archivada':'Activa'}</span></td>
+            <td>${!n.archivada&&Auth.isAdmin()?`<button class="btn btn-outline btn-sm" onclick="archivar(${n.id})">Archivar</button>`:'—'}</td>
+        </tr>`;
+    }).join('');
+}
+
+function abrirModal() {
+    document.getElementById('modalAlert').innerHTML = '';
+    document.getElementById('fPlaca').value = '';
+    document.getElementById('fDescripcion').value = '';
+    document.getElementById('modal').style.display = 'flex';
+}
+
+function cerrarModal() { document.getElementById('modal').style.display = 'none'; }
+
+function guardar() {
+    const placa = document.getElementById('fPlaca').value.trim().toUpperCase();
+    const tipo = document.getElementById('fTipo').value;
+    const desc = document.getElementById('fDescripcion').value.trim();
+    const alert = document.getElementById('modalAlert');
+    if (!placa || !desc) { alert.innerHTML = `<div class="alert alert-danger">❌ Placa y descripción son obligatorias.</div>`; return; }
+    const v = DB.Vehiculos.findOne(veh => veh.placa === placa);
+    if (!v) { alert.innerHTML = `<div class="alert alert-danger">❌ Vehículo no encontrado.</div>`; return; }
+    const user = Auth.getUser();
+    DB.Novedades.add({ tipo, descripcion: desc, fechaRegistro: new Date().toISOString(), archivada: false, vehiculoId: v.id, usuarioSistemaId: user.userId });
+    Toast.success('Novedad registrada.');
+    cerrarModal();
+    renderTabla();
+}
+
+function archivar(id) {
+    DB.Novedades.update(id, { archivada: true });
+    Toast.info('Novedad archivada.');
+    renderTabla();
+}
+
+renderTabla();
+</script>
+</body>
+</html>

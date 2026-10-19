@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vehículos – Autos Colombia</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+<div class="app-layout">
+    <div class="main-content">
+        <header class="topbar">
+            <div class="topbar-title">
+                <h1>🚗 Gestión de Vehículos</h1>
+                <p>Vehículos registrados en el sistema</p>
+            </div>
+            <div class="topbar-actions">
+                <span class="topbar-time" id="topbarTime"></span>
+                <button class="btn btn-primary" onclick="abrirModal()">➕ Nuevo Vehículo</button>
+            </div>
+        </header>
+
+        <main class="page-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="search-bar" style="flex:1;max-width:360px">
+                        <input type="text" id="searchInput" class="form-control" placeholder="Buscar por placa, propietario o tipo..." oninput="renderTabla()">
+                    </div>
+                    <div class="text-muted text-sm" id="totalCount"></div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Placa</th>
+                                <th>Tipo</th>
+                                <th>Marca</th>
+                                <th>Color</th>
+                                <th>Propietario</th>
+                                <th>Estado</th>
+                                <th>Actualmente</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaVehiculos"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modal" style="display:none" onclick="cerrarModalOverlay(event)">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title" id="modalTitle">Nuevo Vehículo</div>
+            <button class="modal-close" onclick="cerrarModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div id="modalAlert"></div>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Placa *</label>
+                    <input type="text" id="fPlaca" class="form-control" placeholder="ABC123" maxlength="7" oninput="this.value=this.value.toUpperCase()" style="font-family:monospace;font-weight:700;letter-spacing:0.1em">
+                </div>
+                <div class="form-group">
+                    <label>Tipo *</label>
+                    <select id="fTipo" class="form-control">
+                        <option value="CARRO">Carro</option>
+                        <option value="MOTO">Moto</option>
+                        <option value="CAMIONETA">Camioneta</option>
+                        <option value="CAMPERO">Campero</option>
+                        <option value="OTRO">Otro</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Marca</label>
+                    <input type="text" id="fMarca" class="form-control" placeholder="Chevrolet, Renault...">
+                </div>
+                <div class="form-group">
+                    <label>Modelo</label>
+                    <input type="text" id="fModelo" class="form-control" placeholder="Spark, Sandero...">
+                </div>
+                <div class="form-group">
+                    <label>Color</label>
+                    <input type="text" id="fColor" class="form-control" placeholder="Blanco, Negro...">
+                </div>
+                <div class="form-group">
+                    <label>Propietario *</label>
+                    <select id="fPropietario" class="form-control"></select>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="cerrarModal()">Cancelar</button>
+            <button class="btn btn-primary" onclick="guardar()">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script>
+Layout.init('vehiculos.html');
+let editId = null;
+
+function renderTabla() {
+    const q = document.getElementById('searchInput').value.toLowerCase();
+    let vehiculos = DB.Vehiculos.getAll();
+    if (q) {
+        vehiculos = vehiculos.filter(v => {
+            const p = DB.Personas.getById(v.personaId);
+            return v.placa.toLowerCase().includes(q) ||
+                v.tipo.toLowerCase().includes(q) ||
+                (p?.nombreCompleto || '').toLowerCase().includes(q);
+        });
+    }
+    document.getElementById('totalCount').textContent = `${vehiculos.length} vehículo(s)`;
+    const tbody = document.getElementById('tablaVehiculos');
+    if (!vehiculos.length) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:2rem">Sin vehículos</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = vehiculos.map(v => {
+        const p = DB.Personas.getById(v.personaId);
+        const dentro = DB.getMovimientoActivo(v.id);
+        return `<tr>
+            <td><span class="font-mono" style="color:var(--accent-cyan);font-weight:700">${v.placa}</span></td>
+            <td>${v.tipo}</td>
+            <td>${v.marca || '—'} ${v.modelo || ''}</td>
+            <td>${v.color || '—'}</td>
+            <td>${p?.nombreCompleto || '—'}</td>
+            <td><span class="badge ${v.activo ? 'badge-success' : 'badge-neutral'}">${v.activo ? 'Activo' : 'Inactivo'}</span></td>
+            <td>${dentro ? '<span class="badge badge-danger animate-pulse">Dentro</span>' : '<span class="badge badge-neutral">Fuera</span>'}</td>
+            <td style="display:flex;gap:0.4rem">
+                <button class="btn btn-outline btn-sm btn-icon" onclick="editar(${v.id})">✏️</button>
+                <button class="btn btn-danger btn-sm btn-icon" onclick="eliminar(${v.id})">🗑️</button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function abrirModal(id) {
+    editId = id || null;
+    document.getElementById('modalTitle').textContent = id ? 'Editar Vehículo' : 'Nuevo Vehículo';
+    document.getElementById('modalAlert').innerHTML = '';
+    const personas = DB.Personas.getAll().filter(p => p.estado === 'ACTIVO');
+    document.getElementById('fPropietario').innerHTML = personas.map(p => `<option value="${p.id}">${p.nombreCompleto} (${p.cedula})</option>`).join('');
+    if (id) {
+        const v = DB.Vehiculos.getById(id);
+        document.getElementById('fPlaca').value = v.placa;
+        document.getElementById('fTipo').value = v.tipo;
+        document.getElementById('fMarca').value = v.marca || '';
+        document.getElementById('fModelo').value = v.modelo || '';
+        document.getElementById('fColor').value = v.color || '';
+        document.getElementById('fPropietario').value = v.personaId;
+    } else {
+        ['fPlaca','fMarca','fModelo','fColor'].forEach(i => document.getElementById(i).value = '');
+        document.getElementById('fTipo').value = 'CARRO';
+    }
+    document.getElementById('modal').style.display = 'flex';
+}
+
+function editar(id) { abrirModal(id); }
+function cerrarModal() { document.getElementById('modal').style.display = 'none'; editId = null; }
+function cerrarModalOverlay(e) { if (e.target.id === 'modal') cerrarModal(); }
+
+function guardar() {
+    const placa = document.getElementById('fPlaca').value.trim().toUpperCase();
+    const tipo = document.getElementById('fTipo').value;
+    const marca = document.getElementById('fMarca').value.trim();
+    const modelo = document.getElementById('fModelo').value.trim();
+    const color = document.getElementById('fColor').value.trim();
+    const personaId = parseInt(document.getElementById('fPropietario').value);
+    const alert = document.getElementById('modalAlert');
+
+    if (!placa || !personaId) {
+        alert.innerHTML = `<div class="alert alert-danger">❌ Placa y propietario son obligatorios.</div>`;
+        return;
+    }
+
+    const dup = DB.Vehiculos.findOne(v => v.placa === placa && v.id !== editId);
+    if (dup) {
+        alert.innerHTML = `<div class="alert alert-danger">❌ Ya existe un vehículo con esa placa.</div>`;
+        return;
+    }
+
+    const data = { placa, tipo, marca, modelo, color, personaId, activo: true };
+    if (editId) { DB.Vehiculos.update(editId, data); Toast.success('Vehículo actualizado.'); }
+    else { DB.Vehiculos.add(data); Toast.success('Vehículo registrado.'); }
+    cerrarModal();
+    renderTabla();
+}
+
+function eliminar(id) {
+    const v = DB.Vehiculos.getById(id);
+    if (DB.getMovimientoActivo(id)) { Toast.error('No se puede eliminar: el vehículo está dentro del parqueadero.'); return; }
+    if (confirm(`¿Eliminar vehículo ${v.placa}?`)) { DB.Vehiculos.delete(id); Toast.success('Vehículo eliminado.'); renderTabla(); }
+}
+
+renderTabla();
+</script>
+</body>
+</html>

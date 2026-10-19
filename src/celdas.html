@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Celdas – Autos Colombia</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+<div class="app-layout">
+    <div class="main-content">
+        <header class="topbar">
+            <div class="topbar-title">
+                <h1>🅿️ Gestión de Celdas</h1>
+                <p>Espacios físicos del parqueadero</p>
+            </div>
+            <div class="topbar-actions">
+                <span class="topbar-time" id="topbarTime"></span>
+            </div>
+        </header>
+        <main class="page-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title">Estado de Celdas</div>
+                    <div style="display:flex;gap:1rem;font-size:0.8rem;color:var(--text-muted)">
+                        <span>🟢 Libre</span><span>🔴 Ocupada</span><span>⚫ Inactiva</span>
+                    </div>
+                </div>
+                <div id="celdaContainer"></div>
+            </div>
+
+            <div class="card mt-2">
+                <div class="card-header">
+                    <div class="card-title">Lista de Celdas</div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr><th>Número</th><th>Sector</th><th>Tipo</th><th>Estado</th><th>Activa</th><th>Acciones</th></tr>
+                        </thead>
+                        <tbody id="tablaCeldas"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script>
+Layout.init('celdas.html');
+
+function renderMapa() {
+    const celdas = DB.Celdas.getAll();
+    const sectores = {};
+    celdas.forEach(c => { if (!sectores[c.sector]) sectores[c.sector] = []; sectores[c.sector].push(c); });
+    let html = '';
+    Object.entries(sectores).forEach(([s, cells]) => {
+        html += `<div style="margin-bottom:1.25rem"><div style="font-size:0.75rem;font-weight:600;color:var(--text-muted);margin-bottom:0.5rem">Sector ${s}</div>`;
+        html += `<div class="parking-grid">`;
+        cells.forEach(c => {
+            const cls = c.activa ? c.estado.toLowerCase() : 'inactiva';
+            html += `<div class="parking-cell ${cls}" title="${c.numero} – ${c.estado}"><span class="cell-num">${c.numero}</span></div>`;
+        });
+        html += `</div></div>`;
+    });
+    document.getElementById('celdaContainer').innerHTML = html;
+}
+
+function renderTabla() {
+    const celdas = DB.Celdas.getAll();
+    const tbody = document.getElementById('tablaCeldas');
+    tbody.innerHTML = celdas.map(c => `<tr>
+        <td class="font-mono" style="color:var(--accent-cyan)">${c.numero}</td>
+        <td>${c.sector}</td>
+        <td>${c.tipo}</td>
+        <td><span class="badge ${c.estado==='LIBRE'?'badge-success':'badge-danger'}">${c.estado}</span></td>
+        <td><span class="badge ${c.activa?'badge-success':'badge-neutral'}">${c.activa?'Sí':'No'}</span></td>
+        <td>
+            <button class="btn btn-outline btn-sm" onclick="toggleActiva(${c.id},${c.activa})">${c.activa?'Inhabilitar':'Habilitar'}</button>
+        </td>
+    </tr>`).join('');
+}
+
+function toggleActiva(id, activa) {
+    if (!activa) { DB.Celdas.update(id, { activa: true }); Toast.success('Celda habilitada.'); }
+    else {
+        const c = DB.Celdas.getById(id);
+        if (c.estado === 'OCUPADA') { Toast.error('No se puede inhabilitar una celda ocupada.'); return; }
+        DB.Celdas.update(id, { activa: false });
+        Toast.success('Celda inhabilitada.');
+    }
+    renderMapa(); renderTabla();
+}
+
+renderMapa(); renderTabla();
+</script>
+</body>
+</html>

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Usuarios – Autos Colombia</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+<div class="app-layout">
+    <div class="main-content">
+        <header class="topbar">
+            <div class="topbar-title">
+                <h1>👥 Gestión de Usuarios</h1>
+                <p>Propietarios de vehículos registrados en el sistema</p>
+            </div>
+            <div class="topbar-actions">
+                <span class="topbar-time" id="topbarTime"></span>
+                <button class="btn btn-primary" onclick="abrirModal()">➕ Nuevo Usuario</button>
+            </div>
+        </header>
+
+        <main class="page-content">
+            <div class="card">
+                <div class="card-header">
+                    <div class="search-bar" style="flex:1;max-width:360px">
+                        <input type="text" id="searchInput" class="form-control" placeholder="Buscar por nombre, cédula o email..." oninput="renderTabla()">
+                    </div>
+                    <div class="text-muted text-sm" id="totalCount"></div>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nombre Completo</th>
+                                <th>Cédula</th>
+                                <th>Teléfono</th>
+                                <th>Email</th>
+                                <th>Vehículos</th>
+                                <th>Estado</th>
+                                <th>Pago Vigente</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tablaPersonas"></tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<!-- Modal Crear/Editar Usuario -->
+<div class="modal-overlay" id="modal" style="display:none" onclick="cerrarModalOverlay(event)">
+    <div class="modal">
+        <div class="modal-header">
+            <div class="modal-title" id="modalTitle">Nuevo Usuario</div>
+            <button class="modal-close" onclick="cerrarModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div id="modalAlert"></div>
+            <div class="form-grid">
+                <div class="form-group" style="grid-column:1/-1">
+                    <label>Nombre Completo *</label>
+                    <input type="text" id="fNombre" class="form-control" placeholder="Ej: Carlos Martínez López">
+                </div>
+                <div class="form-group">
+                    <label>Cédula *</label>
+                    <input type="text" id="fCedula" class="form-control" placeholder="Ej: 10234567">
+                </div>
+                <div class="form-group">
+                    <label>Teléfono</label>
+                    <input type="text" id="fTelefono" class="form-control" placeholder="Ej: 3001234567">
+                </div>
+                <div class="form-group" style="grid-column:1/-1">
+                    <label>Email</label>
+                    <input type="email" id="fEmail" class="form-control" placeholder="usuario@email.com">
+                </div>
+                <div class="form-group" style="grid-column:1/-1">
+                    <label>Dirección</label>
+                    <input type="text" id="fDireccion" class="form-control" placeholder="Calle 45 #12-34">
+                </div>
+                <div class="form-group" style="grid-column:1/-1">
+                    <label>Estado</label>
+                    <select id="fEstado" class="form-control">
+                        <option value="ACTIVO">Activo</option>
+                        <option value="SUSPENDIDO">Suspendido</option>
+                        <option value="INACTIVO">Inactivo</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-outline" onclick="cerrarModal()">Cancelar</button>
+            <button class="btn btn-primary" onclick="guardarUsuario()" id="btnGuardar">Guardar</button>
+        </div>
+    </div>
+</div>
+
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script>
+Layout.init('usuarios.html');
+
+let editId = null;
+
+function renderTabla() {
+    const q = document.getElementById('searchInput').value.toLowerCase();
+    let personas = DB.Personas.getAll();
+    if (q) {
+        personas = personas.filter(p =>
+            p.nombreCompleto.toLowerCase().includes(q) ||
+            p.cedula.includes(q) ||
+            (p.email || '').toLowerCase().includes(q)
+        );
+    }
+    document.getElementById('totalCount').textContent = `${personas.length} registro(s)`;
+    const tbody = document.getElementById('tablaPersonas');
+    if (!personas.length) {
+        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:2rem">Sin registros</td></tr>`;
+        return;
+    }
+    const hoy = new Date().toISOString().split('T')[0];
+    tbody.innerHTML = personas.map(p => {
+        const vehiculos = DB.Vehiculos.find(v => v.personaId === p.id && v.activo).length;
+        const pago = DB.tienePagoVigente(p.id);
+        return `<tr>
+            <td>${Utils.escapeHtml(p.nombreCompleto)}</td>
+            <td class="font-mono">${p.cedula}</td>
+            <td>${p.telefono || '—'}</td>
+            <td>${p.email || '—'}</td>
+            <td style="text-align:center">${vehiculos}</td>
+            <td><span class="badge ${p.estado === 'ACTIVO' ? 'badge-success' : 'badge-danger'}">${p.estado}</span></td>
+            <td>${pago ? '<span class="badge badge-success">Al Día</span>' : '<span class="badge badge-warning">Sin Pago</span>'}</td>
+            <td style="display:flex;gap:0.4rem">
+                <button class="btn btn-outline btn-sm btn-icon" onclick="editar(${p.id})" title="Editar">✏️</button>
+                <button class="btn btn-danger btn-sm btn-icon" onclick="eliminar(${p.id})" title="Eliminar">🗑️</button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function abrirModal(id) {
+    editId = id || null;
+    document.getElementById('modalTitle').textContent = id ? 'Editar Usuario' : 'Nuevo Usuario';
+    document.getElementById('modalAlert').innerHTML = '';
+    if (id) {
+        const p = DB.Personas.getById(id);
+        document.getElementById('fNombre').value = p.nombreCompleto;
+        document.getElementById('fCedula').value = p.cedula;
+        document.getElementById('fTelefono').value = p.telefono || '';
+        document.getElementById('fEmail').value = p.email || '';
+        document.getElementById('fDireccion').value = p.direccion || '';
+        document.getElementById('fEstado').value = p.estado;
+    } else {
+        ['fNombre','fCedula','fTelefono','fEmail','fDireccion'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('fEstado').value = 'ACTIVO';
+    }
+    document.getElementById('modal').style.display = 'flex';
+}
+
+function editar(id) { abrirModal(id); }
+
+function cerrarModal() {
+    document.getElementById('modal').style.display = 'none';
+    editId = null;
+}
+
+function cerrarModalOverlay(e) { if (e.target.id === 'modal') cerrarModal(); }
+
+function guardarUsuario() {
+    const nombre = document.getElementById('fNombre').value.trim();
+    const cedula = document.getElementById('fCedula').value.trim();
+    const telefono = document.getElementById('fTelefono').value.trim();
+    const email = document.getElementById('fEmail').value.trim();
+    const direccion = document.getElementById('fDireccion').value.trim();
+    const estado = document.getElementById('fEstado').value;
+    const alert = document.getElementById('modalAlert');
+
+    if (!nombre || !cedula) {
+        alert.innerHTML = `<div class="alert alert-danger">❌ Nombre y cédula son obligatorios.</div>`;
+        return;
+    }
+
+    // Validar unicidad
+    const duplicado = DB.Personas.findOne(p => p.cedula === cedula && p.id !== editId);
+    if (duplicado) {
+        alert.innerHTML = `<div class="alert alert-danger">❌ Ya existe un usuario con esa cédula.</div>`;
+        return;
+    }
+
+    const data = { nombreCompleto: nombre, cedula, telefono, email, direccion, estado };
+
+    if (editId) {
+        DB.Personas.update(editId, data);
+        Toast.success('Usuario actualizado correctamente.');
+    } else {
+        DB.Personas.add(data);
+        Toast.success('Usuario registrado correctamente.');
+    }
+
+    cerrarModal();
+    renderTabla();
+}
+
+function eliminar(id) {
+    const p = DB.Personas.getById(id);
+    const vehiculos = DB.Vehiculos.find(v => v.personaId === id);
+    if (vehiculos.length) {
+        Toast.error(`No se puede eliminar: ${p.nombreCompleto} tiene ${vehiculos.length} vehículo(s) registrado(s).`);
+        return;
+    }
+    if (confirm(`¿Eliminar al usuario ${p.nombreCompleto}?`)) {
+        DB.Personas.delete(id);
+        Toast.success('Usuario eliminado.');
+        renderTabla();
+    }
+}
+
+renderTabla();
+</script>
+</body>
+</html>
